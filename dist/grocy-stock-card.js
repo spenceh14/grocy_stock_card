@@ -28,6 +28,8 @@ class GrocyStockCard extends HTMLElement {
       ...config
     };
 
+    this._optimisticDeltas = this._optimisticDeltas || {};
+
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
     }
@@ -149,6 +151,7 @@ class GrocyStockCard extends HTMLElement {
 
     let items = normalizedRawItems
       .map((item) => this._normalizeItem(item))
+      .map((item) => this._applyOptimisticDelta(item))
       .filter((item) => item.name);
 
     if (!this.config.show_zero) {
@@ -236,6 +239,10 @@ class GrocyStockCard extends HTMLElement {
     const serviceDataConfig = isAdd ? this.config.add_service_data : this.config.consume_service_data;
 
     const amount = Number(this.config.quantity_step || 1);
+    const delta = isAdd ? amount : -amount;
+
+    this._addOptimisticDelta(item.productId, delta);
+    this._render();
 
     const defaultData = {
       product_id: Number.isNaN(Number(item.productId)) ? item.productId : Number(item.productId),
@@ -250,9 +257,43 @@ class GrocyStockCard extends HTMLElement {
       await this._hass.callService(domain, service, serviceData);
       this._toast(`${isAdd ? "Added" : "Consumed"} ${amount} ${item.unit || ""} ${item.name}`.trim());
     } catch (error) {
+      this._addOptimisticDelta(item.productId, -delta);
+      this._render();
       console.error("Grocy Stock Card service call failed", error);
       this._toast(`Failed to update ${item.name}`);
     }
+  }
+
+  _applyOptimisticDelta(item) {
+    const key = String(item.productId);
+    const delta = Number(this._optimisticDeltas?.[key] || 0);
+
+    if (!delta) return item;
+
+    const quantity = Number(item.quantity);
+    if (Number.isNaN(quantity)) return item;
+
+    return {
+      ...item,
+      quantity: Math.max(0, quantity + delta)
+    };
+  }
+
+  _addOptimisticDelta(productId, delta) {
+    const key = String(productId);
+    this._optimisticDeltas = this._optimisticDeltas || {};
+    this._optimisticDeltas[key] = Number(this._optimisticDeltas[key] || 0) + delta;
+
+    if (Math.abs(this._optimisticDeltas[key]) < 0.000001) {
+      delete this._optimisticDeltas[key];
+    }
+
+    window.setTimeout(() => {
+      if (!this._optimisticDeltas || !this._optimisticDeltas[key]) return;
+
+      delete this._optimisticDeltas[key];
+      this._render();
+    }, Number(this.config.optimistic_timeout_ms || 10000));
   }
 
   _templateServiceData(value, item, amount) {
@@ -463,7 +504,9 @@ class GrocyStockCardEditor extends HTMLElement {
   render() {
     this.innerHTML = `
       <div style="padding: 12px;">
-        <p>Configure this card in YAML for now.</p>
+        <p>
+          Configure this card in YAML for now.
+        </p>
         <pre>type: custom:grocy-stock-card
 entity: sensor.grocy_stock
 title: Freezer Inventory
