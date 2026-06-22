@@ -8,7 +8,8 @@ class GrocyStockCard extends HTMLElement {
       type: "custom:grocy-stock-card",
       entity: "sensor.grocy_stock",
       title: "Grocy Stock",
-      quantity_step: 1
+      quantity_step: 1,
+      show_sort_controls: true
     };
   }
 
@@ -22,12 +23,16 @@ class GrocyStockCard extends HTMLElement {
       quantity_step: 1,
       show_zero: false,
       sort_by: "name",
+      sort_direction: "asc",
+      show_sort_controls: false,
       service_domain: "grocy",
       add_service: "add_product_to_stock",
       consume_service: "consume_product_from_stock",
       ...config
     };
 
+    this._sortBy = this._normalizeSortBy(this._sortBy || this.config.sort_by);
+    this._sortDirection = this._normalizeSortDirection(this._sortDirection || this.config.sort_direction);
     this._optimisticDeltas = this._optimisticDeltas || {};
 
     if (!this.shadowRoot) {
@@ -72,6 +77,8 @@ class GrocyStockCard extends HTMLElement {
             <div class="count">${items.length} item${items.length === 1 ? "" : "s"}</div>
           </div>
 
+          ${this.config.show_sort_controls ? this._sortControlsTemplate() : ""}
+
           ${
             items.length
               ? `<div class="rows">
@@ -83,6 +90,13 @@ class GrocyStockCard extends HTMLElement {
       </ha-card>
     `;
 
+    this.shadowRoot.querySelectorAll("button[data-sort-by]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._setSort(button.dataset.sortBy, button.dataset.sortDirection);
+      });
+    });
+
     this.shadowRoot.querySelectorAll("button[data-action]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -92,6 +106,33 @@ class GrocyStockCard extends HTMLElement {
         if (item) this._changeStock(item, action);
       });
     });
+  }
+
+  _sortControlsTemplate() {
+    const buttons = [
+      { label: "A–Z", title: "Sort alphabetically", sortBy: "name", sortDirection: "asc" },
+      { label: "Qty ↑", title: "Sort by quantity low to high", sortBy: "quantity", sortDirection: "asc" },
+      { label: "Qty ↓", title: "Sort by quantity high to low", sortBy: "quantity", sortDirection: "desc" }
+    ];
+
+    return `
+      <div class="sort-controls" aria-label="Sort freezer inventory">
+        ${buttons
+          .map((button) => {
+            const active = this._sortBy === button.sortBy && this._sortDirection === button.sortDirection;
+            return `
+              <button
+                class="sort-button ${active ? "active" : ""}"
+                data-sort-by="${this._escape(button.sortBy)}"
+                data-sort-direction="${this._escape(button.sortDirection)}"
+                title="${this._escape(button.title)}"
+                aria-pressed="${active ? "true" : "false"}"
+              >${this._escape(button.label)}</button>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
   }
 
   _rowTemplate(item) {
@@ -168,13 +209,37 @@ class GrocyStockCard extends HTMLElement {
       items = items.filter((item) => String(item.location || "").toLowerCase().includes(location));
     }
 
-    if (this.config.sort_by === "quantity") {
-      items.sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
-    } else {
-      items.sort((a, b) => a.name.localeCompare(b.name));
-    }
+    const sortBy = this._normalizeSortBy(this._sortBy || this.config.sort_by);
+    const sortDirection = this._normalizeSortDirection(this._sortDirection || this.config.sort_direction);
+
+    items.sort((a, b) => {
+      let result;
+
+      if (sortBy === "quantity") {
+        result = Number(a.quantity || 0) - Number(b.quantity || 0);
+        if (result === 0) result = a.name.localeCompare(b.name);
+      } else {
+        result = a.name.localeCompare(b.name);
+      }
+
+      return sortDirection === "desc" ? -result : result;
+    });
 
     return items;
+  }
+
+  _normalizeSortBy(value) {
+    return value === "quantity" ? "quantity" : "name";
+  }
+
+  _normalizeSortDirection(value) {
+    return value === "desc" ? "desc" : "asc";
+  }
+
+  _setSort(sortBy, sortDirection) {
+    this._sortBy = this._normalizeSortBy(sortBy);
+    this._sortDirection = this._normalizeSortDirection(sortDirection);
+    this._render();
   }
 
   _normalizeItem(item) {
@@ -387,6 +452,35 @@ class GrocyStockCard extends HTMLElement {
           white-space: nowrap;
         }
 
+        .sort-controls {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin: 0 0 12px;
+        }
+
+        .sort-button {
+          border: 1px solid var(--divider-color);
+          border-radius: 999px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1;
+          cursor: pointer;
+          padding: 7px 10px;
+        }
+
+        .sort-button.active {
+          background: var(--primary-color);
+          border-color: var(--primary-color);
+          color: var(--text-primary-color, #fff);
+        }
+
+        .sort-button:active {
+          transform: scale(0.97);
+        }
+
         .rows {
           display: flex;
           flex-direction: column;
@@ -510,7 +604,8 @@ class GrocyStockCardEditor extends HTMLElement {
         <pre>type: custom:grocy-stock-card
 entity: sensor.grocy_stock
 title: Freezer Inventory
-quantity_step: 1</pre>
+quantity_step: 1
+show_sort_controls: true</pre>
       </div>
     `;
   }
