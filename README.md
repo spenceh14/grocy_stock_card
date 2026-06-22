@@ -11,6 +11,7 @@ This is designed for freezer inventory where you want to see each Grocy product 
 - Adds `+` and `-` buttons for each item.
 - Calls Home Assistant Grocy services to add or consume stock.
 - Supports optional filtering, sorting, and custom service names.
+- Can show dashboard sort buttons for alphabetical, quantity low-to-high, and quantity high-to-low sorting.
 - No build step required.
 
 ## Installation with HACS
@@ -61,9 +62,40 @@ title: Freezer Inventory
 quantity_step: 1
 show_zero: false
 sort_by: name
+sort_direction: asc
+show_sort_controls: true
 service_domain: grocy
 add_service: add_product_to_stock
 consume_service: consume_product_from_stock
+```
+
+## Dashboard sort controls
+
+Enable sort buttons directly on the card:
+
+```yaml
+type: custom:grocy-stock-card
+entity: sensor.grocy_stock
+title: Freezer Inventory
+quantity_step: 1
+show_sort_controls: true
+sort_by: name
+sort_direction: asc
+```
+
+This shows three buttons on the dashboard:
+
+- `A–Z` sorts alphabetically.
+- `Qty ↑` sorts by quantity from low to high.
+- `Qty ↓` sorts by quantity from high to low.
+
+The selected sort mode is stored in the card while the dashboard page is open. The default sort after a refresh comes from `sort_by` and `sort_direction` in YAML.
+
+Supported sort values:
+
+```yaml
+sort_by: name       # or quantity
+sort_direction: asc # or desc
 ```
 
 ## Filtering
